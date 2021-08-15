@@ -52,7 +52,7 @@ class RNDModel(nn.Module):
         # WARNING: Make sure you use different types of weight 
         #          initializations for these two functions
 
-        # HINT 1) Check out the method ptu.build_mlp
+        # HINT 1) Check out the method ptu.
         # HINT 2) There are two weight init methods defined above
 
         self.f = MLP(self.ob_dim, self.output_size, self.n_layers, self.size, init_method=init_method_1)
