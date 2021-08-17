@@ -349,7 +349,8 @@ class LunarLander(gym.Env):
         at_site = pos.x >= self.helipad_x1 and pos.x <= self.helipad_x2 and state[1] <= 0
         grounded = self.legs[0].ground_contact and self.legs[1].ground_contact
         landed = at_site and grounded
-
+        
+        info = {}
         done = self.game_over or oob or not_awake or timeout or landed
         if done:
           if self.game_over or oob:
@@ -360,7 +361,7 @@ class LunarLander(gym.Env):
             self.lander.color1 = (0,255,0)
           elif timeout:
             self.lander.color1 = (255,0,0)
-        info = {}
+          info = {"oob":oob, "at_site":at_site, "grounded":grounded, "timeoout":timeout}
 
         return np.array(state), reward, done, info
 

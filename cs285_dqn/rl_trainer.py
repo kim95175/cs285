@@ -100,6 +100,8 @@ class RL_Trainer(object):
         else:
             self.fps = 10
 
+        print("fps = ", self.fps)
+
         #############
         ## AGENT
         #############
@@ -108,8 +110,7 @@ class RL_Trainer(object):
         self.agent = agent_class(self.env, self.params['agent_params'])
 
     def run_training_loop(self, n_iter, collect_policy, eval_policy):
-                          #initial_expertdata=None, relabel_with_expert=False,
-                          #start_relabel_with_expert=1, expert_policy=None):
+        
         """
         :param n_iter:  number of (dagger) iterations
         :param collect_policy:
@@ -131,13 +132,8 @@ class RL_Trainer(object):
                 # only perform an env step and add to replay buffer for DQN
                 self.agent.step_env()
                 envsteps_this_batch = 1
-                #train_video_paths = None
-                #paths = None
             
             self.total_envsteps += envsteps_this_batch
-
-            # add collected data to replay buffer
-            #self.agent.add_to_replay_buffer(paths)
 
             # train agent (using sampled data from replay buffer)
             if itr % print_period == 0:
@@ -145,7 +141,6 @@ class RL_Trainer(object):
             all_logs = self.train_agent()
 
             # log/save
-            #if self.logvideo or self.logmetrics:
             if itr % self.params['scalar_log_freq'] == 0:
                 # perform logging
                 print('\nBeginning logging procedure...')
@@ -179,7 +174,16 @@ class RL_Trainer(object):
         logs = OrderedDict()
 
         logs["Train_EnvstepsSoFar"] = self.agent.t
+        logs["Train_EpisodeSoFar"] = self.agent.num_episodes
         print("Timestep %d" % (self.agent.t,))
+        print("Num Episodes %d" % (self.agent.num_episodes,))
+        if self.agent.num_episodes > 0:
+            print("Grounded rate(%) = {0:.2f}".format(self.agent.num_grounded * 100 /self.agent.num_episodes))
+            print("Success rate(%) = {0:.2f}".format(self.agent.num_at_site * 100 /self.agent.num_episodes))
+
+        logs["Num_Episode_Grounded"] = self.agent.num_grounded
+        logs["Num_Episode_Grounded_at_site"] = self.agent.num_at_site
+
         if self.mean_episode_reward > -5000:
             logs["Train_AverageReturn"] = np.mean(self.mean_episode_reward)
         print("mean reward (100 episodes) %f" % self.mean_episode_reward)

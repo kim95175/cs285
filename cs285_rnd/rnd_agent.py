@@ -1,7 +1,7 @@
 from collections import OrderedDict
 
 from dqn_critic import DQNCritic
-from replay_buffer import ReplayBuffer
+#from replay_buffer import ReplayBuffer
 from utils import *
 from dqn_utils import MemoryOptimizedReplayBuffer
 from rnd_model import RNDModel, MyExplorationModel

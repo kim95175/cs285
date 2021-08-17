@@ -30,6 +30,10 @@ class DQNAgent(object):
             agent_params['replay_buffer_size'], agent_params['frame_history_len'], lander=lander)
         self.t = 0
         self.num_param_updates = 0
+        self.num_episodes = 0
+
+        self.num_grounded = 0
+        self.num_at_site = 0
 
     #def add_to_replay_buffer(self, paths):
     #    pass
@@ -50,7 +54,7 @@ class DQNAgent(object):
         eps = self.exploration.value(self.t)
 
         # TODO use epsilon greedy exploration when selecting action
-        perform_random_action = np.random.random()<eps or self.t < self.learning_starts
+        perform_random_action = np.random.random() < eps or self.t < self.learning_starts
         if perform_random_action:
             # HINT: take random action 
                 # with probability eps (see np.random.random())
@@ -73,8 +77,8 @@ class DQNAgent(object):
         # HINT2: remember the following useful function that you've seen before:
             #obs, reward, done, info = env.step(action)
         obs, reward, done, info = self.env.step(action)
-
         self.last_obs=obs
+
         # TODO store the result of taking this action into the replay buffer
         # HINT1: see your replay buffer's `store_effect` function
         # HINT2: one of the arguments you'll need to pass in is self.replay_buffer_idx from above
@@ -83,6 +87,12 @@ class DQNAgent(object):
         # TODO if taking this step resulted in done, reset the env (and the latest observation)
         if done:
             self.last_obs = self.env.reset()
+            self.num_episodes += 1
+            if info['at_site']:
+                self.num_at_site += 1
+            if info['grounded']:
+                self.num_grounded += 1
+            #print(info)
 
     def sample(self, batch_size):
         if self.replay_buffer.can_sample(self.batch_size):
@@ -102,7 +112,6 @@ class DQNAgent(object):
             log = self.dqn.update(
                 ob_no, ac_na, next_ob_no, re_n, terminal_n
             )
-
             # TODO update the target network periodically 
             # HINT: your critic already has this functionality implemented
             if self.num_param_updates % self.target_update_freq == 0:
