@@ -28,6 +28,7 @@ class DQN(object):
 
         self.ac_dim = hparams['ac_dim']
         self.double_q = hparams['double_q']
+        #self.n_step = hparams['n_step']
         self.grad_norm_clipping = hparams['grad_norm_clipping']
         self.gamma = hparams['gamma']
 
@@ -46,55 +47,52 @@ class DQN(object):
         self.q_net.to(ptu.device)
         self.q_net_target.to(ptu.device)
 
-    def update(self, ob_no, ac_na, next_ob_no, reward_n, terminal_n):
+    def update(self, obs, action, next_obs, reward, done):
         """
             Update the parameters of the critic.
             let sum_of_path_lengths be the sum of the lengths of the paths sampled from
                 Agent.sample_trajectories
             let num_paths be the number of paths sampled from Agent.sample_trajectories
             arguments:
-                ob_no: shape: (sum_of_path_lengths, ob_dim)
-                next_ob_no: shape: (sum_of_path_lengths, ob_dim). The observation after taking one step forward
-                reward_n: length: sum_of_path_lengths. Each element in reward_n is a scalar containing
+                obs: shape: (sum_of_path_lengths, ob_dim)
+                next_obs: shape: (sum_of_path_lengths, ob_dim). The observation after taking one step forward
+                reward: length: sum_of_path_lengths. Each element in reward is a scalar containing
                     the reward for each timestep
-                terminal_n: length: sum_of_path_lengths. Each element in terminal_n is either 1 if the episode ended
+                done: length: sum_of_path_lengths. Each element in done is either 1 if the episode ended
                     at that timestep of 0 if the episode did not end
             returns:
                 nothing
         """
-        ob_no = ptu.from_numpy(ob_no)
-        ac_na = ptu.from_numpy(ac_na).to(torch.long)
-        next_ob_no = ptu.from_numpy(next_ob_no)
-        reward_n = ptu.from_numpy(reward_n)
-        terminal_n = ptu.from_numpy(terminal_n)
+        obs = ptu.from_numpy(obs)
+        action = ptu.from_numpy(action).to(torch.long)
+        next_obs = ptu.from_numpy(next_obs)
+        reward = ptu.from_numpy(reward)
+        done = ptu.from_numpy(done)
 
-        #print(ob_no.shape)
-        #print(next_ob_no.shape)
-        qa_t_values = self.q_net(ob_no)
-        q_t_values = torch.gather(qa_t_values, 1, ac_na.unsqueeze(1)).squeeze(1)
+        q_pred = self.q_net(obs)
+        q_value = torch.gather(q_pred, 1, action.unsqueeze(1)).squeeze(1)
         
         # TODO compute the Q-values from the target network 
-        qa_tp1_values = self.q_net_target(next_ob_no)
+        q_pred_next_target = self.q_net_target(next_obs)
 
         if self.double_q:
             # You must fill this part for Q2 of the Q-learning portion of the homework.
             # In double Q-learning, the best action is selected using the Q-network that
             # is being updated, but the Q-value for this action is obtained from the
             # target Q-network. See page 5 of https://arxiv.org/pdf/1509.06461.pdf for more details.
-            #q_tp1=q_t_values(qa_tp1_values.argmax(dim=1))
-            next_actions = self.q_net(next_ob_no).argmax(dim=1)
-            q_tp1 = torch.gather(qa_tp1_values, 1, next_actions.unsqueeze(1)).squeeze(1)
+            next_actions = self.q_net(next_obs).argmax(dim=1)
+            q_value_next_target = torch.gather(q_pred_next_target, 1, next_actions.unsqueeze(1)).squeeze(1)
         else:
-            q_tp1, _ = qa_tp1_values.max(dim=1)
+            q_value_next_target, _ = q_pred_next_target.max(dim=1)
 
         # TODO compute targets for minimizing Bellman error
         # HINT: as you saw in lecture, this would be:
             #currentReward + self.gamma * qValuesOfNextTimestep * (not terminal)
-        target = reward_n+self.gamma*q_tp1*(1-terminal_n)
-        target = target.detach()
+        q_target = reward+self.gamma*q_value_next_target*(1-done)
+        q_target = q_target.detach()
 
-        assert q_t_values.shape == target.shape
-        loss = self.loss(q_t_values, target)
+        assert q_value.shape == q_target.shape
+        loss = self.loss(q_value, q_target)
 
         self.optimizer.zero_grad()
         loss.backward()

@@ -122,9 +122,7 @@ def sample_n_trajectories(env, policy, ntraj, max_path_length, render=False, ren
         paths.append(path)
 
     return paths
-    # TODO: get this from hw1 or hw2
-
-    return paths
+ 
 
 ############################################
 ############################################
@@ -189,3 +187,5 @@ def add_noise(data_inp, noiseToSignal=0.01):
             0, np.absolute(std_of_noise[j]), (data.shape[0],)))
 
     return data
+
+

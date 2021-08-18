@@ -1,7 +1,7 @@
 """This file includes a collection of utility functions that are useful for
 implementing DQN."""
 import random
-from collections import namedtuple
+from collections import deque, namedtuple
 
 import gym
 import numpy as np
@@ -195,7 +195,7 @@ def get_wrapper_by_name(env, classname):
             raise ValueError("Couldn't find wrapper named %s"%classname)
 
 class MemoryOptimizedReplayBuffer(object):
-    def __init__(self, size, frame_history_len, lander=False):
+    def __init__(self, size, frame_history_len, lander=False, n_step= 1):
         """This is a memory efficient implementation of the replay buffer.
 
         The sepecific memory optimizations use here are:
@@ -226,7 +226,7 @@ class MemoryOptimizedReplayBuffer(object):
         self.size = size
         self.frame_history_len = frame_history_len
 
-        self.next_idx      = 0
+        self.idx      = 0
         self.num_in_buffer = 0
 
         self.obs      = None
@@ -234,9 +234,12 @@ class MemoryOptimizedReplayBuffer(object):
         self.reward   = None
         self.done     = None
 
+        self.n_step = n_step
+        self.n_step_buffer = deque(maxlen=n_step)
+
     def can_sample(self, batch_size):
         """Returns true if `batch_size` different transitions can be sampled from the buffer."""
-        return batch_size + 1 <= self.num_in_buffer
+        return (batch_size + 1)* self.n_step <= self.num_in_buffer
 
     def _encode_sample(self, idxes):
         obs_batch      = np.concatenate([self._encode_observation(idx)[None] for idx in idxes], 0)
@@ -244,10 +247,29 @@ class MemoryOptimizedReplayBuffer(object):
         rew_batch      = self.reward[idxes]
         next_obs_batch = np.concatenate([self._encode_observation(idx + 1)[None] for idx in idxes], 0)
         done_mask      = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes], dtype=np.float32)
-
-        #print("dqn_utls/memory~/encode_sample", obs_batch.shape, next_obs_batch.shape)
+        
         return obs_batch, act_batch, rew_batch, next_obs_batch, done_mask
 
+    def _encode_n_sample(self, idxes):
+        n_obs_batch, n_act_batch, n_rew_batch, n_next_obs_batch, n_done_mask = [], [], [], [], []
+        for i in range(self.n_step):
+            #print([idx + i for idx in idxes])
+            obs_batch      = np.concatenate([self._encode_observation(idx+i)[None] for idx in idxes], 0)
+            act_batch      = self.action[[idx + i for idx in idxes]]
+            rew_batch      = self.reward[[idx + i for idx in idxes]]
+            next_obs_batch = np.concatenate([self._encode_observation(idx+1+i)[None] for idx in idxes], 0)
+            done_mask      = np.array([1.0 if self.done[idx+i] else 0.0 for idx in idxes], dtype=np.float32)
+            
+            n_obs_batch.append(obs_batch)
+            n_act_batch.append(act_batch)
+            n_rew_batch.append(rew_batch)
+            n_next_obs_batch.append(next_obs_batch)
+            n_done_mask.append(done_mask)
+            #print(f"n_step {i} ob_no {obs_batch.shape}, ac_na {act_batch}, re_n {rew_batch},\
+            #    next_ob_no {next_obs_batch.shape}, terminal_n {done_mask}")
+       
+        #return obs_batch, act_batch, rew_batch, next_obs_batch, done_mask
+        return n_obs_batch, n_act_batch, n_rew_batch, n_next_obs_batch, n_done_mask
 
     def sample(self, batch_size):
         """Sample `batch_size` different transitions.
@@ -283,12 +305,15 @@ class MemoryOptimizedReplayBuffer(object):
             Array of shape (batch_size,) and dtype np.float32
         """
         assert self.can_sample(batch_size)
-        idxes = sample_n_unique(lambda: random.randint(0, self.num_in_buffer - 2), batch_size)
-        return self._encode_sample(idxes)
+        idxes = sample_n_unique(lambda: random.randint(0, self.num_in_buffer - (1 + self.n_step)), batch_size)
+        #print("buffer.sample idxes = {}".format(idxes))
+        if self.n_step == 1:
+            return self._encode_sample(idxes)
+        if self.n_step > 1:
+            return self._encode_n_sample(idxes)
 
     def encode_recent_observation(self):
         """Return the most recent `frame_history_len` frames.
-
         Returns
         -------
         observation: np.array
@@ -297,7 +322,7 @@ class MemoryOptimizedReplayBuffer(object):
             encodes frame at time `t - frame_history_len + i`
         """
         assert self.num_in_buffer > 0
-        return self._encode_observation((self.next_idx - 1) % self.size)
+        return self._encode_observation((self.idx - 1) % self.size)
 
     def _encode_observation(self, idx):
         end_idx   = idx + 1 # make noninclusive
@@ -345,12 +370,14 @@ class MemoryOptimizedReplayBuffer(object):
             self.action   = np.empty([self.size],                     dtype=np.int32)
             self.reward   = np.empty([self.size],                     dtype=np.float32)
             self.done     = np.empty([self.size],                     dtype=np.bool)
-        self.obs[self.next_idx] = frame
-
-        ret = self.next_idx
-        self.next_idx = (self.next_idx + 1) % self.size
+        
+        #print("Store_frame idx = ", self.idx)
+        self.obs[self.idx] = frame
+        
+        ret = self.idx
+        self.idx = (self.idx + 1) % self.size
         self.num_in_buffer = min(self.size, self.num_in_buffer + 1)
-
+        
         return ret
 
     def store_effect(self, idx, action, reward, done):
@@ -370,7 +397,9 @@ class MemoryOptimizedReplayBuffer(object):
         done: bool
             True if episode was finished after performing that action.
         """
+        #print("store_effect_idx = ", idx)
         self.action[idx] = action
         self.reward[idx] = reward
         self.done[idx]   = done
+
 

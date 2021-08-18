@@ -53,13 +53,14 @@ def main():
 
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_agent_train_steps_per_iter', type=int, default=1)
-    #parser.add_argument('--num_critic_updates_per_agent_update', type=int, default=1)
     parser.add_argument('--double_q', action='store_true')
+    parser.add_argument('--n_step', type=int, default=1)
+    
 
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_gpu', '-ngpu', action='store_true')
     parser.add_argument('--which_gpu', '-gpu_id', default=0)
-    parser.add_argument('--scalar_log_freq', type=int, default=int(5e3)) # 1e4
+    parser.add_argument('--scalar_log_freq', type=int, default=int(5e4)) # 1e4
     
     #parser.add_argument('--video_log_freq', type=int, default=-1)
 
@@ -80,7 +81,7 @@ def main():
     if not (os.path.exists(data_path)):
         os.makedirs(data_path)
 
-    logdir = args.exp_name + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+    logdir = args.exp_name + '_lunarlander'  #args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
     logdir = os.path.join(data_path, logdir)
     params['logdir'] = logdir
     if not(os.path.exists(logdir)):

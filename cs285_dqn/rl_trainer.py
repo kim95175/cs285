@@ -16,8 +16,9 @@ from logger import Logger
 from dqn_agent import DQNAgent
 from dqn_utils import (
         get_wrapper_by_name,
-        register_custom_envs,
+        register_custom_envs
 )
+from tqdm import tqdm
 
 # how many rollouts to save as videos to tensorboard
 MAX_NVIDEO = 2
@@ -55,7 +56,7 @@ class RL_Trainer(object):
         if 'env_wrappers' in self.params:
             # These operations are currently only for Atari envs
             print("if 'env_wrappers' in self.params:")
-            self.env = wrappers.Monitor(self.env, os.path.join(self.params['logdir'], "gym"), force=True)
+            self.env = wrappers.Monitor(self.env, os.path.join(self.params['logdir'], "gym"),video_callable=video_schedule, force=True)
             self.env = params['env_wrappers'](self.env)
             self.mean_episode_reward = -float('nan')
             self.best_mean_episode_reward = -float('inf')
@@ -121,11 +122,11 @@ class RL_Trainer(object):
         self.total_envsteps = 0
         self.start_time = time.time()
 
-        print_period = 1000 if isinstance(self.agent, DQNAgent) else 1
+        print_period = self.params['scalar_log_freq'] if isinstance(self.agent, DQNAgent) else 1
 
-        for itr in range(n_iter):
+        for itr in tqdm(range(n_iter)):
             if itr % print_period == 0:
-                print("\n\n********** Iteration %i ************"%itr)
+                print("\n********** Iteration %i ************"%itr)
 
             # collect trajectories, to be used for training
             if isinstance(self.agent, DQNAgent):
@@ -148,7 +149,10 @@ class RL_Trainer(object):
 
                 #if self.params['save_params']:
                 #    self.agent.save('{}/agent_itr_{}.pt'.format(self.params['logdir'], itr))
-
+        
+        print("\n\n********** Training finished ************")
+        all_logs = self.train_agent()
+        self.perform_dqn_logging(all_logs)
 
     def train_agent(self):
         all_logs = []
@@ -208,4 +212,11 @@ class RL_Trainer(object):
         self.logger.flush()
 
 
-   
+def video_schedule(episode_id):
+    '''
+    if episode_id < 1000:
+        return int(round(episode_id ** (1.0 / 3))) ** 3 == episode_id
+    else:
+        return episode_id % 1000 == 0
+    '''
+    return episode_id % 200 == 0

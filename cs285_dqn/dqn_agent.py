@@ -27,13 +27,16 @@ class DQNAgent(object):
 
         lander = agent_params['env_name'].startswith('LunarLander')
         self.replay_buffer = MemoryOptimizedReplayBuffer(
-            agent_params['replay_buffer_size'], agent_params['frame_history_len'], lander=lander)
+            agent_params['replay_buffer_size'], agent_params['frame_history_len'], lander=lander, n_step=agent_params['n_step'])
         self.t = 0
         self.num_param_updates = 0
         self.num_episodes = 0
 
         self.num_grounded = 0
         self.num_at_site = 0
+
+        self.n_step = agent_params['n_step']
+        self.gamma = agent_params['gamma']
 
     #def add_to_replay_buffer(self, paths):
     #    pass
@@ -50,7 +53,8 @@ class DQNAgent(object):
         # HINT: the replay buffer used here is `MemoryOptimizedReplayBuffer`
             # in dqn_utils.py
         self.replay_buffer_idx = self.replay_buffer.store_frame(self.last_obs)
-
+        
+        #print(self.replay_buffer_idx)
         eps = self.exploration.value(self.t)
 
         # TODO use epsilon greedy exploration when selecting action
@@ -100,17 +104,21 @@ class DQNAgent(object):
         else:
             return [],[],[],[],[]
 
-    def train(self, ob_no, ac_na, re_n, next_ob_no, terminal_n):
+    def train(self, obs, action, reward, next_obs, done):
         log = {}
         if (self.t > self.learning_starts
                 and self.t % self.learning_freq == 0
                 and self.replay_buffer.can_sample(self.batch_size)
         ):
 
+            #print(f"obs {obs.shape}, action {action.shape}, reward {reward.shape}, next_obs {next_obs.shape}, done {done.shape}")
             # TODO fill in the call to the update function using the appropriate tensors
-            #print("agent/train ", ob_no.shape, next_ob_no.shape)
+            #print("agent/train ", obs.shape, next_obs.shape)
+            if self.n_step > 1:
+                obs, action, reward, next_obs, done = self.calc_n_step_return(obs, action, reward, next_obs, done)
+            
             log = self.dqn.update(
-                ob_no, ac_na, next_ob_no, re_n, terminal_n
+                obs, action, next_obs, reward, done
             )
             # TODO update the target network periodically 
             # HINT: your critic already has this functionality implemented
@@ -121,4 +129,53 @@ class DQNAgent(object):
 
         self.t += 1
         return log
+    
 
+    def calc_n_step_return(self, obs_n, action_n, reward_n, next_obs_n, done_n):
+        ##is_done = np.ones(done[0].shape)
+        #print("is_done", is_done)
+        done_step = np.zeros(done_n[0].shape)
+
+        next_obs_stack = np.stack(next_obs_n, axis=1)
+        done_stack = np.stack(done_n, axis=1)
+        #print(next_obs.shape)
+
+        obs = obs_n[0]
+        action = action_n[0]
+        n_step_reward = reward_n[0]
+        is_done = (1 - done_n[0])
+    
+        #print("0", n_step_reward)
+        for i in range(1, self.n_step):
+            n_step_reward += (self.gamma**i) * ( reward_n[i] * (is_done))
+            #print(i, n_step_reward)
+            done_step += is_done
+            is_done *= (1 - done_n[i])
+            #print(done[i])
+            #print("is_done", is_done)
+        
+        #print("done step", done_step)
+        
+        next_obs = np.zeros(obs.shape)
+        done = np.zeros(done_n[0].shape)
+        for idx, step in enumerate(done_step):
+            next_obs[idx] = next_obs_stack[idx][int(step)]
+            done[idx] = done_stack[idx][int(step)]
+        '''
+        if 0 in done_step:
+            #print(obs_n)
+            print("================N-step_return=========")
+            print(next_obs_n)
+            print(reward_n)
+            print(done_n)
+
+            print(next_obs)
+            print(n_step_reward)
+            print(done)
+
+            print(is_done)
+            print(done_step)
+        #print(done)
+        '''
+        
+        return obs, action, n_step_reward, next_obs, done
