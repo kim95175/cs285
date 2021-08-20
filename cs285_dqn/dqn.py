@@ -3,7 +3,7 @@ import torch.optim as optim
 from torch.nn import utils
 from torch import nn
 
-import pytorch_util as ptu
+import core.pytorch_util as ptu
 
 def create_lander_q_network(ob_dim, num_actions):
     return nn.Sequential(
@@ -70,8 +70,10 @@ class DQN(object):
         done = ptu.from_numpy(done)
 
         q_pred = self.q_net(obs)
-        q_value = torch.gather(q_pred, 1, action.unsqueeze(1)).squeeze(1)
+        #q_value = torch.gather(q_pred, 1, action.unsqueeze(1)).squeeze(1)
+        q_value = q_pred.gather(1, action.unsqueeze(1)).squeeze(1)
         
+
         # TODO compute the Q-values from the target network 
         q_pred_next_target = self.q_net_target(next_obs)
 
@@ -81,14 +83,14 @@ class DQN(object):
             # is being updated, but the Q-value for this action is obtained from the
             # target Q-network. See page 5 of https://arxiv.org/pdf/1509.06461.pdf for more details.
             next_actions = self.q_net(next_obs).argmax(dim=1)
-            q_value_next_target = torch.gather(q_pred_next_target, 1, next_actions.unsqueeze(1)).squeeze(1)
+            q_value_next_target = q_pred_next_target.gather(1, next_actions.unsqueeze(1)).squeeze(1)
         else:
             q_value_next_target, _ = q_pred_next_target.max(dim=1)
 
         # TODO compute targets for minimizing Bellman error
         # HINT: as you saw in lecture, this would be:
             #currentReward + self.gamma * qValuesOfNextTimestep * (not terminal)
-        q_target = reward+self.gamma*q_value_next_target*(1-done)
+        q_target = reward + self.gamma*q_value_next_target*(1-done)
         q_target = q_target.detach()
 
         assert q_value.shape == q_target.shape

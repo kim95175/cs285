@@ -1,9 +1,11 @@
 import os
 import time
 
+from core.dqn_utils import get_env_kwargs
+
 from rl_trainer import RL_Trainer
 from dqn_agent import DQNAgent
-from dqn_utils import get_env_kwargs
+
 
 
 class Q_Trainer(object):
@@ -13,12 +15,12 @@ class Q_Trainer(object):
 
         train_args = {
             'num_agent_train_steps_per_iter': params['num_agent_train_steps_per_iter'],
-            #'num_critic_updates_per_agent_update': params['num_critic_updates_per_agent_update'],
             'train_batch_size': params['batch_size'],
             'double_q': params['double_q'],
         }
 
         env_args = get_env_kwargs(params['env_name'])
+        env_args['num_timesteps'] = params['num_timesteps']
 
         self.agent_params = {**train_args, **env_args, **params}
 
@@ -43,13 +45,13 @@ def main():
     parser.add_argument(
         '--env_name',
         default='LunarLander-v3',
-        choices=('PongNoFrameskip-v4', 'LunarLander-v3', 'MsPacman-v0')
+        choices=('LunarLander-v3')
     )
 
     parser.add_argument('--ep_len', type=int, default=200)
     parser.add_argument('--exp_name', type=str, default='todo')
+    parser.add_argument('--num_timesteps', type=int, default=200000)
 
-    parser.add_argument('--eval_batch_size', type=int, default=1000)
 
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_agent_train_steps_per_iter', type=int, default=1)
@@ -60,9 +62,7 @@ def main():
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_gpu', '-ngpu', action='store_true')
     parser.add_argument('--which_gpu', '-gpu_id', default=0)
-    parser.add_argument('--scalar_log_freq', type=int, default=int(5e4)) # 1e4
-    
-    #parser.add_argument('--video_log_freq', type=int, default=-1)
+    parser.add_argument('--scalar_log_freq', type=int, default=int(1e4)) # 1e4
 
     parser.add_argument('--save_params', action='store_true')
 
@@ -71,7 +71,7 @@ def main():
     # convert to dictionary
     params = vars(args)
     print(params)
-    #params['video_log_freq'] = -1 # This param is not used for DQN
+
     ##################################
     ### CREATE DIRECTORY FOR LOGGING
     ##################################

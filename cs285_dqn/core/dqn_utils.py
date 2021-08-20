@@ -28,7 +28,7 @@ def register_custom_envs():
     if 'LunarLander-v3' not in registry.env_specs:
         register(
             id='LunarLander-v3',
-            entry_point='lunar_lander:LunarLander',
+            entry_point='envs.lunar_lander:LunarLander',
             max_episode_steps=1000,
             reward_threshold=200,
         )
@@ -49,7 +49,7 @@ def get_env_kwargs(env_name):
             'target_update_freq': 3000,
             'grad_norm_clipping': 10,
             'lander': True,
-            'num_timesteps': 350000, #500000,
+            'num_timesteps': 200000, #500000,
             'env_wrappers': lunar_empty_wrapper
         }
         kwargs['exploration_schedule'] = lander_exploration_schedule(kwargs['num_timesteps'])
@@ -194,8 +194,8 @@ def get_wrapper_by_name(env, classname):
         else:
             raise ValueError("Couldn't find wrapper named %s"%classname)
 
-class MemoryOptimizedReplayBuffer(object):
-    def __init__(self, size, frame_history_len, lander=False, n_step= 1):
+class ReplayBuffer(object):
+    def __init__(self, size, frame_history_len, lander=False, n_step=1, gamma = 1):
         """This is a memory efficient implementation of the replay buffer.
 
         The sepecific memory optimizations use here are:
@@ -228,48 +228,43 @@ class MemoryOptimizedReplayBuffer(object):
 
         self.idx      = 0
         self.num_in_buffer = 0
-
+        
         self.obs      = None
         self.action   = None
         self.reward   = None
+        self.next_obs = None
         self.done     = None
+        
+        self.gamma = gamma
 
         self.n_step = n_step
-        self.n_step_buffer = deque(maxlen=n_step)
+        if n_step > 1:
+            self.n_states = deque(maxlen=n_step+1)
+            self.n_actions = deque(maxlen=n_step+1)
+            self.n_rewards = deque(maxlen=n_step+1)
 
+    def init_replay_buffer(self, frame):
+        if self.obs is None:
+            self.obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.lander else np.uint8)
+            self.action   = np.empty([self.size],                     dtype=np.int32)
+            self.reward   = np.empty([self.size],                     dtype=np.float32)
+            self.next_obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.lander else np.uint8)
+            self.done     = np.empty([self.size],                     dtype=np.bool)
+    
     def can_sample(self, batch_size):
         """Returns true if `batch_size` different transitions can be sampled from the buffer."""
-        return (batch_size + 1)* self.n_step <= self.num_in_buffer
+        return (batch_size + 1)*self.n_step <= self.num_in_buffer
 
     def _encode_sample(self, idxes):
-        obs_batch      = np.concatenate([self._encode_observation(idx)[None] for idx in idxes], 0)
+        #obs_batch      = np.concatenate([self._encode_observation(idx)[None] for idx in idxes], 0)
+        obs_batch      = np.concatenate([self.obs[idx][None] for idx in idxes], 0)
         act_batch      = self.action[idxes]
         rew_batch      = self.reward[idxes]
-        next_obs_batch = np.concatenate([self._encode_observation(idx + 1)[None] for idx in idxes], 0)
+        next_obs_batch      = np.concatenate([self.next_obs[idx][None] for idx in idxes], 0)
+        #next_obs_batch = np.concatenate([self._encode_next_observation(idx)[None] for idx in idxes], 0)
         done_mask      = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes], dtype=np.float32)
         
         return obs_batch, act_batch, rew_batch, next_obs_batch, done_mask
-
-    def _encode_n_sample(self, idxes):
-        n_obs_batch, n_act_batch, n_rew_batch, n_next_obs_batch, n_done_mask = [], [], [], [], []
-        for i in range(self.n_step):
-            #print([idx + i for idx in idxes])
-            obs_batch      = np.concatenate([self._encode_observation(idx+i)[None] for idx in idxes], 0)
-            act_batch      = self.action[[idx + i for idx in idxes]]
-            rew_batch      = self.reward[[idx + i for idx in idxes]]
-            next_obs_batch = np.concatenate([self._encode_observation(idx+1+i)[None] for idx in idxes], 0)
-            done_mask      = np.array([1.0 if self.done[idx+i] else 0.0 for idx in idxes], dtype=np.float32)
-            
-            n_obs_batch.append(obs_batch)
-            n_act_batch.append(act_batch)
-            n_rew_batch.append(rew_batch)
-            n_next_obs_batch.append(next_obs_batch)
-            n_done_mask.append(done_mask)
-            #print(f"n_step {i} ob_no {obs_batch.shape}, ac_na {act_batch}, re_n {rew_batch},\
-            #    next_ob_no {next_obs_batch.shape}, terminal_n {done_mask}")
-       
-        #return obs_batch, act_batch, rew_batch, next_obs_batch, done_mask
-        return n_obs_batch, n_act_batch, n_rew_batch, n_next_obs_batch, n_done_mask
 
     def sample(self, batch_size):
         """Sample `batch_size` different transitions.
@@ -307,10 +302,7 @@ class MemoryOptimizedReplayBuffer(object):
         assert self.can_sample(batch_size)
         idxes = sample_n_unique(lambda: random.randint(0, self.num_in_buffer - (1 + self.n_step)), batch_size)
         #print("buffer.sample idxes = {}".format(idxes))
-        if self.n_step == 1:
-            return self._encode_sample(idxes)
-        if self.n_step > 1:
-            return self._encode_n_sample(idxes)
+        return self._encode_sample(idxes)
 
     def encode_recent_observation(self):
         """Return the most recent `frame_history_len` frames.
@@ -329,6 +321,7 @@ class MemoryOptimizedReplayBuffer(object):
         start_idx = end_idx - self.frame_history_len
         # this checks if we are using low-dimensional observations, such as RAM
         # state, in which case we just directly return the latest RAM.
+        print("[rb]obs.shape = ", self.obs.shape)
         if len(self.obs.shape) == 2:
             return self.obs[end_idx-1]
         # if there weren't enough frames ever in the buffer for context
@@ -350,6 +343,32 @@ class MemoryOptimizedReplayBuffer(object):
             img_h, img_w = self.obs.shape[1], self.obs.shape[2]
             return self.obs[start_idx:end_idx].transpose(1, 2, 0, 3).reshape(img_h, img_w, -1)
 
+    def _encode_next_observation(self, idx):
+        end_idx   = idx + 1 # make noninclusive
+        start_idx = end_idx - self.frame_history_len
+        # this checks if we are using low-dimensional observations, such as RAM
+        # state, in which case we just directly return the latest RAM.
+        if len(self.next_obs.shape) == 2:
+            return self.next_obs[end_idx-1]
+        # if there weren't enough frames ever in the buffer for context
+        if start_idx < 0 and self.num_in_buffer != self.size:
+            start_idx = 0
+        for idx in range(start_idx, end_idx - 1):
+            if self.done[idx % self.size]:
+                start_idx = idx + 1
+        missing_context = self.frame_history_len - (end_idx - start_idx)
+        # if zero padding is needed for missing context
+        # or we are on the boundry of the buffer
+        if start_idx < 0 or missing_context > 0:
+            frames = [np.zeros_like(self.next_obs[0]) for _ in range(missing_context)]
+            for idx in range(start_idx, end_idx):
+                frames.append(self.next_obs[idx % self.size])
+            return np.concatenate(frames, 2)
+        else:
+            # this optimization has potential to saves about 30% compute time \o/
+            img_h, img_w = self.next_obs.shape[1], self.next_obs.shape[2]
+            return self.next_obs[start_idx:end_idx].transpose(1, 2, 0, 3).reshape(img_h, img_w, -1)
+
     def store_frame(self, frame):
         """Store a single frame in the buffer at the next available index, overwriting
         old frames if necessary.
@@ -369,6 +388,7 @@ class MemoryOptimizedReplayBuffer(object):
             self.obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.lander else np.uint8)
             self.action   = np.empty([self.size],                     dtype=np.int32)
             self.reward   = np.empty([self.size],                     dtype=np.float32)
+            self.next_obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.lander else np.uint8)
             self.done     = np.empty([self.size],                     dtype=np.bool)
         
         #print("Store_frame idx = ", self.idx)
@@ -380,26 +400,40 @@ class MemoryOptimizedReplayBuffer(object):
         
         return ret
 
-    def store_effect(self, idx, action, reward, done):
-        """Store effects of action taken after obeserving frame stored
-        at index idx. The reason `store_frame` and `store_effect` is broken
-        up into two functions is so that once can call `encode_recent_observation`
-        in between.
+    def write(self, obs, action, reward, next_obs, done):
+        if self.n_step == 1:
+            self.store(obs, action, reward, next_obs, done)
+        else:
+            self.n_states.append(obs)
+            self.n_actions.append(action)
+            self.n_rewards.append(reward)
 
-        Paramters
-        ---------
-        idx: int
-            Index in buffer of recently observed frame (returned by `store_frame`).
-        action: int
-            Action that was performed upon observing this frame.
-        reward: float
-            Reward that was received when the actions was performed.
-        done: bool
-            True if episode was finished after performing that action.
-        """
-        #print("store_effect_idx = ", idx)
-        self.action[idx] = action
-        self.reward[idx] = reward
-        self.done[idx]   = done
+            if done:
+                n_step_reward = 0
+                while len(self.n_states) > 1:
+                    n_step_obs = self.n_states.popleft()
+                    n_step_action = self.n_actions.popleft()
+                    n_step_next_obs = self.n_states[-1]
+                    for i in range(len(self.n_rewards)):
+                        n_step_reward += (self.gamma ** i ) * self.n_rewards.popleft()
+
+                    self.store(n_step_obs, n_step_action, n_step_reward, n_step_next_obs, done)
+
+            elif len(self.n_states) == self.n_step + 1:
+                n_step_reward = 0
+                for i in range(len(self.n_rewards)):
+                     n_step_reward += (self.gamma ** i ) * self.n_rewards.popleft()
+                self.store(self.n_states[0], self.n_actions[0], n_step_reward, self.n_states[-1], done)
+
+    def store(self, obs, action, reward, next_obs, done):
+        self.obs[self.idx] = obs
+        self.action[self.idx] = action
+        self.reward[self.idx] = reward
+        self.done[self.idx]   = done
+        self.next_obs[self.idx] = next_obs
+
+        self.idx = (self.idx + 1) % self.size
+        self.num_in_buffer = min(self.size, self.num_in_buffer + 1)
+            
 
 

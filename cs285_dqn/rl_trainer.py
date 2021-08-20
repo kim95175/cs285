@@ -8,17 +8,18 @@ import gym
 from gym import wrappers
 import numpy as np
 import torch
+from tqdm import tqdm
 
-import pytorch_util as ptu
-import utils
-from logger import Logger
+import core.pytorch_util as ptu
+import core.utils
+from core.logger import Logger
 
 from dqn_agent import DQNAgent
-from dqn_utils import (
+from core.dqn_utils import (
         get_wrapper_by_name,
         register_custom_envs
 )
-from tqdm import tqdm
+
 
 # how many rollouts to save as videos to tensorboard
 MAX_NVIDEO = 2
