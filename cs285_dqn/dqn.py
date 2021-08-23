@@ -23,12 +23,10 @@ class DQN(object):
 
         if isinstance(self.ob_dim, int):
             self.input_shape = (self.ob_dim,)
-        #else:
-        #    self.input_shape = hparams['input_shape']
 
         self.ac_dim = hparams['ac_dim']
         self.double_q = hparams['double_q']
-        #self.n_step = hparams['n_step']
+
         self.grad_norm_clipping = hparams['grad_norm_clipping']
         self.gamma = hparams['gamma']
 
@@ -43,23 +41,21 @@ class DQN(object):
             self.optimizer,
             self.optimizer_spec.learning_rate_schedule,
         )
-        self.loss = nn.SmoothL1Loss()  # AKA Huber loss
+        self.loss = nn.SmoothL1Loss()  
         self.q_net.to(ptu.device)
         self.q_net_target.to(ptu.device)
 
     def update(self, obs, action, next_obs, reward, done):
         """
-            Update the parameters of the critic.
-            let sum_of_path_lengths be the sum of the lengths of the paths sampled from
-                Agent.sample_trajectories
-            let num_paths be the number of paths sampled from Agent.sample_trajectories
+            Update the parameters of the dqn
             arguments:
-                obs: shape: (sum_of_path_lengths, ob_dim)
-                next_obs: shape: (sum_of_path_lengths, ob_dim). The observation after taking one step forward
-                reward: length: sum_of_path_lengths. Each element in reward is a scalar containing
-                    the reward for each timestep
-                done: length: sum_of_path_lengths. Each element in done is either 1 if the episode ended
-                    at that timestep of 0 if the episode did not end
+                obs: shape: (batch_Size, ob_dim)
+                next_obs: shape: (batch_Size, ob_dim). 
+                    The observation after taking one step forward
+                reward: length: batch_Size. 
+                    Each element in reward is a scalar containing the reward for each timestep
+                done: length: batch_Size. 
+                    Each element in done is either 1 if the episode endedat that timestep of 0 if the episode did not end
             returns:
                 nothing
         """
@@ -70,7 +66,6 @@ class DQN(object):
         done = ptu.from_numpy(done)
 
         q_pred = self.q_net(obs)
-        #q_value = torch.gather(q_pred, 1, action.unsqueeze(1)).squeeze(1)
         q_value = q_pred.gather(1, action.unsqueeze(1)).squeeze(1)
         
 
@@ -80,17 +75,16 @@ class DQN(object):
         if self.double_q:
             # You must fill this part for Q2 of the Q-learning portion of the homework.
             # In double Q-learning, the best action is selected using the Q-network that
-            # is being updated, but the Q-value for this action is obtained from the
-            # target Q-network. See page 5 of https://arxiv.org/pdf/1509.06461.pdf for more details.
+            # is being updated, but the Q-value for this action is obtained from the target Q-network.
             next_actions = self.q_net(next_obs).argmax(dim=1)
             q_value_next_target = q_pred_next_target.gather(1, next_actions.unsqueeze(1)).squeeze(1)
         else:
             q_value_next_target, _ = q_pred_next_target.max(dim=1)
 
         # TODO compute targets for minimizing Bellman error
-        # HINT: as you saw in lecture, this would be:
+        # HINT: this would be:
             #currentReward + self.gamma * qValuesOfNextTimestep * (not terminal)
-        q_target = reward + self.gamma*q_value_next_target*(1-done)
+        q_target = reward + self.gamma*q_value_next_target * (1-done)
         q_target = q_target.detach()
 
         assert q_value.shape == q_target.shape

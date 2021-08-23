@@ -43,7 +43,6 @@ class DQNAgent(object):
             Note that self.last_obs must always point to the new latest observation.
         """        
         obs = self.last_obs
-        #print(self.replay_buffer_idx)
         eps = self.exploration.value(self.t)
 
         # TODO use epsilon greedy exploration when selecting action
@@ -51,10 +50,9 @@ class DQNAgent(object):
             # HINT: take random action 
                 # with probability eps (see np.random.random())
                 # OR if your current step number (see self.t) is less that self.learning_starts
-            #action = np.random.randint(self.num_actions)
             action = self.env.action_space.sample()
         else:
-            # TODO query the policy with enc_last_obs to select action
+            # TODO select action from dqn
             action = self.dqn.get_action(obs)
         
         # TODO take a step in the environment using the action from the policy
@@ -94,7 +92,7 @@ class DQNAgent(object):
                 obs, action, next_obs, reward, done
             )
             # TODO update the target network periodically 
-            # HINT: your critic already has this functionality implemented
+            # HINT: dqn.py already has this functionality implemented
             if self.num_param_updates % self.target_update_freq == 0:
                 self.dqn.update_target_network()
 
