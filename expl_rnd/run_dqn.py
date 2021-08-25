@@ -1,10 +1,11 @@
 import os
 import time
 
-from core.dqn_utils import get_env_kwargs
+from core.dqn_utils import get_env_kwargs, PiecewiseSchedule, ConstantSchedule
 
 from rl_trainer import RL_Trainer
 from dqn_agent import DQNAgent
+
 
 
 
@@ -44,25 +45,31 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--env_name',
-        default='LunarLander-v3',
-        choices=('LunarLander-v3')
+        default='PointmassHard-v0',
+        choices=('PointmassEasy-v0', 'PointmassMedium-v0', 'PointmassHard-v0', 'PointmassVeryHard-v0', 'PointmassSpiral-v0')
     )
 
     parser.add_argument('--ep_len', type=int, default=200)
     parser.add_argument('--exp_name', type=str, default='todo')
-    parser.add_argument('--num_timesteps', type=int, default=200000)
+    parser.add_argument('--num_timesteps', type=int, default=40000)
 
 
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--num_agent_train_steps_per_iter', type=int, default=1)
     parser.add_argument('--double_q', action='store_true')
     parser.add_argument('--n_step', type=int, default=1)
     
+    parser.add_argument('--use_rnd', action='store_true')
+    parser.add_argument('--num_exploration_steps', type=int, default=20000)
 
-    parser.add_argument('--seed', type=int, default=5)
+    parser.add_argument('--rnd_output_size', type=int, default=5)
+    parser.add_argument('--rnd_n_layers', type=int, default=2)
+    parser.add_argument('--rnd_size', type=int, default=400)
+
+    parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_gpu', '-ngpu', action='store_true')
     parser.add_argument('--which_gpu', '-gpu_id', default=0)
-    parser.add_argument('--scalar_log_freq', type=int, default=int(1e4)) # 1e4
+    parser.add_argument('--scalar_log_freq', type=int, default=int(5e3)) # 1e4
 
     parser.add_argument('--save_params', action='store_true')
 
@@ -70,18 +77,36 @@ def main():
 
     # convert to dictionary
     params = vars(args)
-    print(params)
-
+    
+        
+    params['exploit_weight_schedule'] = ConstantSchedule(1.0)
+    if params['use_rnd']:
+        params['explore_weight_schedule'] = PiecewiseSchedule([(0,1), (params['num_exploration_steps'], 0)], outside_value=0.0)
+    else:
+        params['explore_weight_schedule'] = ConstantSchedule(0.0)
+    
+    
+    
+    if params['env_name']=='PointmassEasy-v0':
+        params['num_timesteps']=10000
+        params['num_exploration_steps']=5000
+    if params['env_name']=='PointmassMedium-v0':
+        params['num_timesteps']=20000
+        params['num_exploration_steps']= 10000
+    if params['env_name']=='PointmassSpiral-v0':
+        params['num_timesteps']=30000
+        params['num_exploration_steps']=15000
+ 
     ##################################
     ### CREATE DIRECTORY FOR LOGGING
     ##################################
-
+    print(params)
     data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), './data')
 
     if not (os.path.exists(data_path)):
         os.makedirs(data_path)
 
-    logdir = args.exp_name + '_lunarlander'  #args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+    logdir = args.exp_name + '_' + args.env_name[:-3]
     logdir = os.path.join(data_path, logdir)
     params['logdir'] = logdir
     if not(os.path.exists(logdir)):

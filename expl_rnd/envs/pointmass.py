@@ -286,19 +286,19 @@ class Pointmass(gym.Env):
       resize_factor = 2
       self.fixed_start = np.array([0.5, 0.5]) * resize_factor
       self.fixed_goal = np.array([4.5, 4.5]) * resize_factor
-      self.max_episode_steps = 50
+      self.max_episode_steps = 25 #50
     elif difficulty == 1:
       walls = 'Maze6x6'
       resize_factor = 1
       self.fixed_start = np.array([0.5, 0.5]) * resize_factor
       self.fixed_goal = np.array([1.5, 5.5]) * resize_factor
-      self.max_episode_steps = 150
+      self.max_episode_steps = 75 #150
     elif difficulty == 2:
       walls = 'FourRooms'
       resize_factor = 2
       self.fixed_start = np.array([1.0, 1.0]) * resize_factor
       self.fixed_goal = np.array([10.0, 10.0]) * resize_factor
-      self.max_episode_steps = 100
+      self.max_episode_steps = 100 #100
     elif difficulty == 3:
       #NOTE TO STUDENTS: FEEL FREE TO EDIT THESE PARAMS FOR THE EXTRA CREDIT PROBLEM!
       walls = 'Maze11x11'
@@ -307,11 +307,11 @@ class Pointmass(gym.Env):
       self.fixed_goal = np.array([0.5, 10.5]) * resize_factor
       self.max_episode_steps = 200
     elif difficulty == 4:
-      walls = 'Maze6x6'
+      walls = 'Spiral7x7'
       resize_factor = 1
-      self.fixed_start = np.array([0.5, 0.5]) * resize_factor
-      self.fixed_goal = np.array([1.5, 5.5]) * resize_factor
-      self.max_episode_steps = 150
+      self.fixed_start = np.array([6.5, 6.5]) * resize_factor
+      self.fixed_goal = np.array([3.5, 3.5]) * resize_factor
+      self.max_episode_steps = 50 #150
     elif difficulty == 5:
       walls = 'FourRooms'
       resize_factor = 2
@@ -359,10 +359,10 @@ class Pointmass(gym.Env):
         
     if len(self.obs_vec) > 0:
       self.last_trajectory = self.plot_trajectory()
-    #print("self.last_trajectory ", self.last_trajectory)
-
+    
     self.plt.clf()
     self.timesteps_left = self.max_episode_steps
+    '''
     if self.difficulty == 4:
       random_start_point = np.array([[0.5, 0.5],[3.5, 0.5],[5.5, 1.5],[5.5, 4.5], [3.5, 3.5]])
       start_choice = np.random.choice(random_start_point.shape[0], 1, p=[0.6, 0.1, 0.1, 0.1, 0.1])
@@ -376,8 +376,9 @@ class Pointmass(gym.Env):
       self.obs_vec = [self._normalize_obs(random_start.copy())]
       self.state = random_start.copy()
     else:
-      self.obs_vec = [self._normalize_obs(self.fixed_start.copy())]
-      self.state = self.fixed_start.copy()
+    '''
+    self.obs_vec = [self._normalize_obs(self.fixed_start.copy())]
+    self.state = self.fixed_start.copy()
     self.num_runs += 1
     return self._normalize_obs(self.state.copy())
 

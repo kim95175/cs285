@@ -76,10 +76,11 @@ class RNDAgent(object):
             # Run Exploration Model #
             # TODO: Evaluate the exploration model on s' to get the exploration bonus
             # HINT: Normalize the exploration bonus, as RND values vary highly in magnitude
+            #print(next_ob_no)
             error = self.exploration_model.forward_np(next_ob_no)
             expl_bonus = normalize(error, error.mean(), error.std())
-
-            # Reward Calculations #
+            #print(expl_bonus)
+            # Reward Calculations #     
             # TODO: Calculate mixed rewards, which will be passed into the exploration critic
             # HINT: See hw5 pdf for definition of mixed_reward
             mixed_reward = explore_weight*expl_bonus + exploit_weight*re_n

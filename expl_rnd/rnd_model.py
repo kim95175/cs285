@@ -1,8 +1,9 @@
-import pytorch_util as ptu
 import torch.optim as optim
 from torch import nn
 import torch
 import numpy as np
+
+import core.pytorch_util as ptu
 
 def init_method_1(model):
     model.weight.data.uniform_()
@@ -27,7 +28,7 @@ class MLP(nn.Module):
         
         last_layer = nn.Linear(in_size, output_size)
         if init_method is not None:
-            curr_layer.apply(init_method)
+            last_layer.apply(init_method)
         layers.append(last_layer)
         
         self.layers = nn.Sequential(*layers)
@@ -54,6 +55,7 @@ class RNDModel(nn.Module):
 
         # HINT 1) Check out the method ptu.
         # HINT 2) There are two weight init methods defined above
+
         self.f = MLP(self.ob_dim, self.output_size, self.n_layers, self.size, init_method=init_method_1)
         self.f_hat = MLP(self.ob_dim, self.output_size, self.n_layers, self.size, init_method=init_method_2)
 

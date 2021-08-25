@@ -11,6 +11,6 @@
 #python run_dqn.py --env_name LunarLander-v3 --exp_name dqn_n3_s3 --seed 3 --n_step 3 
 
 
-python run_dqn.py --env_name LunarLander-v3 --exp_name dqn_n1_s4 --seed 4 
+python run_dqn.py --env_name LunarLander-v3 --exp_name dqn_n1_s5 --seed 5 --num_timesteps 500000 --batch_size 32 --double_q
 #python run_dqn.py --env_name LunarLander-v3 --exp_name ddqn_n1_s4 --seed 4 --double_q
 #python run_dqn.py --env_name LunarLander-v3 --exp_name dqn_n_step3_s4 --seed 4 --n_step 4

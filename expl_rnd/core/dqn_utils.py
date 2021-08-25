@@ -1,8 +1,7 @@
 """This file includes a collection of utility functions that are useful for
 implementing DQN."""
 import random
-from collections import namedtuple
-import pdb
+from collections import deque, namedtuple
 
 import gym
 import numpy as np
@@ -12,7 +11,6 @@ import torch.optim as optim
 from gym.envs.registration import register
 
 import torch
-
 
 class Flatten(torch.nn.Module):
     def forward(self, x):
@@ -27,77 +25,90 @@ OptimizerSpec = namedtuple(
 
 def register_custom_envs():
     from gym.envs.registration import registry
+    if 'LunarLander-v3' not in registry.env_specs:
+        register(
+            id='LunarLander-v3',
+            entry_point='envs.lunar_lander:LunarLander',
+            max_episode_steps=1000,
+            reward_threshold=200,
+        )
+    
     if 'PointmassEasy-v0' not in registry.env_specs:
         register(
             id='PointmassEasy-v0',
-            entry_point='pointmass.pointmass:Pointmass',
+            entry_point='envs.pointmass:Pointmass',
             kwargs={'difficulty': 0}
         )
     if 'PointmassMedium-v0' not in registry.env_specs:
         register(
             id='PointmassMedium-v0',
-            entry_point='pointmass.pointmass:Pointmass',
+            entry_point='envs.pointmass:Pointmass',
             kwargs={'difficulty': 1}
         )
     if 'PointmassHard-v0' not in registry.env_specs:
         register(
             id='PointmassHard-v0',
-            entry_point='pointmass.pointmass:Pointmass',
+            entry_point='envs.pointmass:Pointmass',
             kwargs={'difficulty': 2}
         )
     if 'PointmassVeryHard-v0' not in registry.env_specs:
         register(
             id='PointmassVeryHard-v0',
-            entry_point='pointmass.pointmass:Pointmass',
+            entry_point='envs.pointmass:Pointmass',
             kwargs={'difficulty': 3}
         )
-    if 'PointmassMediumRandom-v0' not in registry.env_specs:
+    if 'PointmassSpiral-v0' not in registry.env_specs:
         register(
-            id='PointmassMediumRandom-v0',
-            entry_point='pointmass.pointmass:Pointmass',
+            id='PointmassSpiral-v0',
+            entry_point='envs.pointmass:Pointmass',
             kwargs={'difficulty': 4}
         )
-    if 'PointmassHardRandom-v0' not in registry.env_specs:
-        register(
-            id='PointmassHardRandom-v0',
-            entry_point='pointmass.pointmass:Pointmass',
-            kwargs={'difficulty': 5}
-        )
 
 
-def get_env_kwargs(env_name, num_timesteps):
-    # THIS NEEDS TO BE UPDATED
-    if 'Pointmass' in env_name:
+def get_env_kwargs(env_name):
+    if env_name == 'LunarLander-v3':
+        def lunar_empty_wrapper(env):
+            return env
+        kwargs = {
+            'optimizer_spec': lander_optimizer(),
+            'replay_buffer_size': 50000,
+            'batch_size': 32,
+            'gamma': 1.00,
+            'learning_starts': 1000,
+            'learning_freq': 1,
+            'frame_history_len': 1,
+            'target_update_freq': 3000,
+            'grad_norm_clipping': 10,
+            'lander': True,
+            'num_timesteps': 200000, #500000,
+            'env_wrappers': lunar_empty_wrapper
+        }
+        kwargs['exploration_schedule'] = lander_exploration_schedule(kwargs['num_timesteps'])
+
+    elif 'Pointmass' in env_name:
         def pointmass_empty_wrapper(env):
             return env
         kwargs = {
             'optimizer_spec': pointmass_optimizer(),
-            'q_func': create_q_network,
+            #'q_func': create_q_network,
             'replay_buffer_size': int(1e5),
             'gamma': 0.95,
+            'learning_starts': 2000,
             'learning_freq': 1,
             'frame_history_len': 1,
             'target_update_freq': 300,
             'grad_norm_clipping': 10,
-            #'lander': False,
+            'lander': False,
             'num_timesteps': 50000,
             'env_wrappers': pointmass_empty_wrapper
         }
         kwargs['exploration_schedule'] = exploration_schedule(kwargs['num_timesteps'])
-
+        
     else:
         raise NotImplementedError
 
     return kwargs
 
-def create_q_network(ob_dim, num_actions):
-    return nn.Sequential(
-        nn.Linear(ob_dim, 64),
-        nn.ReLU(),
-        nn.Linear(64, 64),
-        nn.ReLU(),
-        nn.Linear(64, num_actions),
-    )
 
 class Ipdb(nn.Module):
     def __init__(self):
@@ -105,6 +116,24 @@ class Ipdb(nn.Module):
     def forward(self, x):
         import ipdb; ipdb.set_trace()
         return x
+
+def lander_optimizer():
+    return OptimizerSpec(
+        constructor=optim.Adam,
+        optim_kwargs=dict(
+            lr=1,
+        ),
+        learning_rate_schedule=lambda epoch: 1e-3,  # keep init learning rate
+    )
+
+
+def lander_exploration_schedule(num_timesteps):
+    return PiecewiseSchedule(
+        [
+            (0, 1),
+            (num_timesteps * 0.1, 0.02),
+        ], outside_value=0.02
+    )
 
 def pointmass_optimizer():
     return OptimizerSpec(
@@ -221,57 +250,6 @@ class LinearSchedule(object):
         fraction  = min(float(t) / self.schedule_timesteps, 1.0)
         return self.initial_p + fraction * (self.final_p - self.initial_p)
 
-def compute_exponential_averages(variables, decay):
-    """Given a list of tensorflow scalar variables
-    create ops corresponding to their exponential
-    averages
-    Parameters
-    ----------
-    variables: [tf.Tensor]
-        List of scalar tensors.
-    Returns
-    -------
-    averages: [tf.Tensor]
-        List of scalar tensors corresponding to averages
-        of al the `variables` (in order)
-    apply_op: tf.runnable
-        Op to be run to update the averages with current value
-        of variables.
-    """
-    averager = tf.train.ExponentialMovingAverage(decay=decay)
-    apply_op = averager.apply(variables)
-    return [averager.average(v) for v in variables], apply_op
-
-def minimize_and_clip(optimizer, objective, var_list, clip_val=10):
-    """Minimized `objective` using `optimizer` w.r.t. variables in
-    `var_list` while ensure the norm of the gradients for each
-    variable is clipped to `clip_val`
-    """
-    gradients = optimizer.compute_gradients(objective, var_list=var_list)
-    for i, (grad, var) in enumerate(gradients):
-        if grad is not None:
-            gradients[i] = (tf.clip_by_norm(grad, clip_val), var)
-    return optimizer.apply_gradients(gradients)
-
-def initialize_interdependent_variables(session, vars_list, feed_dict):
-    """Initialize a list of variables one at a time, which is useful if
-    initialization of some variables depends on initialization of the others.
-    """
-    vars_left = vars_list
-    while len(vars_left) > 0:
-        new_vars_left = []
-        for v in vars_left:
-            try:
-                session.run(tf.variables_initializer([v]), feed_dict)
-            except tf.errors.FailedPreconditionError:
-                new_vars_left.append(v)
-        if len(new_vars_left) >= len(vars_left):
-            # This can happen if the variables all depend on each other, or more likely if there's
-            # another variable outside of the list, that still needs to be initialized. This could be
-            # detected here, but life's finite.
-            raise Exception("Cycle in variable dependencies, or extenrnal precondition unsatisfied.")
-        else:
-            vars_left = new_vars_left
 
 def get_wrapper_by_name(env, classname):
     currentenv = env
@@ -283,8 +261,8 @@ def get_wrapper_by_name(env, classname):
         else:
             raise ValueError("Couldn't find wrapper named %s"%classname)
 
-class MemoryOptimizedReplayBuffer(object):
-    def __init__(self, size, frame_history_len, lander=False, float_obs=False):
+class ReplayBuffer(object):
+    def __init__(self, size, frame_history_len, lander=False, n_step=1, gamma = 1):
         """This is a memory efficient implementation of the replay buffer.
 
         The sepecific memory optimizations use here are:
@@ -310,32 +288,50 @@ class MemoryOptimizedReplayBuffer(object):
         frame_history_len: int
             Number of memories to be retried for each observation.
         """
-        self.float_obs = lander or float_obs
-        print("self.float_obs =", self.float_obs)
+        #self.lander = lander
+        self.float_ops = True
         self.size = size
         self.frame_history_len = frame_history_len
 
-        self.next_idx      = 0
+        self.idx      = 0
         self.num_in_buffer = 0
-
+        
         self.obs      = None
         self.action   = None
         self.reward   = None
+        self.next_obs = None
         self.done     = None
+        
+        self.gamma = gamma
 
+        self.n_step = n_step
+        if n_step > 1:
+            self.n_states = deque(maxlen=n_step+1)
+            self.n_actions = deque(maxlen=n_step+1)
+            self.n_rewards = deque(maxlen=n_step+1)
+
+    def init_replay_buffer(self, frame):
+        if self.obs is None:
+            self.obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.float_ops else np.uint8)
+            self.action   = np.empty([self.size],                     dtype=np.int32)
+            self.reward   = np.empty([self.size],                     dtype=np.float32)
+            self.next_obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.float_ops else np.uint8)
+            self.done     = np.empty([self.size],                     dtype=np.bool)
+    
     def can_sample(self, batch_size):
         """Returns true if `batch_size` different transitions can be sampled from the buffer."""
-        return batch_size + 1 <= self.num_in_buffer
+        return (batch_size + 1)*self.n_step <= self.num_in_buffer
 
     def _encode_sample(self, idxes):
-        obs_batch      = np.concatenate([self._encode_observation(idx)[None] for idx in idxes], 0)
+        #obs_batch      = np.concatenate([self._encode_observation(idx)[None] for idx in idxes], 0)
+        obs_batch      = np.concatenate([self.obs[idx][None] for idx in idxes], 0)
         act_batch      = self.action[idxes]
         rew_batch      = self.reward[idxes]
-        next_obs_batch = np.concatenate([self._encode_observation(idx + 1)[None] for idx in idxes], 0)
+        next_obs_batch      = np.concatenate([self.next_obs[idx][None] for idx in idxes], 0)
+        #next_obs_batch = np.concatenate([self._encode_next_observation(idx)[None] for idx in idxes], 0)
         done_mask      = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes], dtype=np.float32)
-
+        
         return obs_batch, act_batch, rew_batch, next_obs_batch, done_mask
-
 
     def sample(self, batch_size):
         """Sample `batch_size` different transitions.
@@ -371,12 +367,12 @@ class MemoryOptimizedReplayBuffer(object):
             Array of shape (batch_size,) and dtype np.float32
         """
         assert self.can_sample(batch_size)
-        idxes = sample_n_unique(lambda: random.randint(0, self.num_in_buffer - 2), batch_size)
+        idxes = sample_n_unique(lambda: random.randint(0, self.num_in_buffer - (1 + self.n_step)), batch_size)
+        #print("buffer.sample idxes = {}".format(idxes))
         return self._encode_sample(idxes)
 
     def encode_recent_observation(self):
         """Return the most recent `frame_history_len` frames.
-
         Returns
         -------
         observation: np.array
@@ -385,13 +381,14 @@ class MemoryOptimizedReplayBuffer(object):
             encodes frame at time `t - frame_history_len + i`
         """
         assert self.num_in_buffer > 0
-        return self._encode_observation((self.next_idx - 1) % self.size)
+        return self._encode_observation((self.idx - 1) % self.size)
 
     def _encode_observation(self, idx):
         end_idx   = idx + 1 # make noninclusive
         start_idx = end_idx - self.frame_history_len
         # this checks if we are using low-dimensional observations, such as RAM
         # state, in which case we just directly return the latest RAM.
+        print("[rb]obs.shape = ", self.obs.shape)
         if len(self.obs.shape) == 2:
             return self.obs[end_idx-1]
         # if there weren't enough frames ever in the buffer for context
@@ -413,6 +410,32 @@ class MemoryOptimizedReplayBuffer(object):
             img_h, img_w = self.obs.shape[1], self.obs.shape[2]
             return self.obs[start_idx:end_idx].transpose(1, 2, 0, 3).reshape(img_h, img_w, -1)
 
+    def _encode_next_observation(self, idx):
+        end_idx   = idx + 1 # make noninclusive
+        start_idx = end_idx - self.frame_history_len
+        # this checks if we are using low-dimensional observations, such as RAM
+        # state, in which case we just directly return the latest RAM.
+        if len(self.next_obs.shape) == 2:
+            return self.next_obs[end_idx-1]
+        # if there weren't enough frames ever in the buffer for context
+        if start_idx < 0 and self.num_in_buffer != self.size:
+            start_idx = 0
+        for idx in range(start_idx, end_idx - 1):
+            if self.done[idx % self.size]:
+                start_idx = idx + 1
+        missing_context = self.frame_history_len - (end_idx - start_idx)
+        # if zero padding is needed for missing context
+        # or we are on the boundry of the buffer
+        if start_idx < 0 or missing_context > 0:
+            frames = [np.zeros_like(self.next_obs[0]) for _ in range(missing_context)]
+            for idx in range(start_idx, end_idx):
+                frames.append(self.next_obs[idx % self.size])
+            return np.concatenate(frames, 2)
+        else:
+            # this optimization has potential to saves about 30% compute time \o/
+            img_h, img_w = self.next_obs.shape[1], self.next_obs.shape[2]
+            return self.next_obs[start_idx:end_idx].transpose(1, 2, 0, 3).reshape(img_h, img_w, -1)
+
     def store_frame(self, frame):
         """Store a single frame in the buffer at the next available index, overwriting
         old frames if necessary.
@@ -429,35 +452,55 @@ class MemoryOptimizedReplayBuffer(object):
             Index at which the frame is stored. To be used for `store_effect` later.
         """
         if self.obs is None:
-            self.obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.float_obs else np.uint8)
+            self.obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.lander else np.uint8)
             self.action   = np.empty([self.size],                     dtype=np.int32)
             self.reward   = np.empty([self.size],                     dtype=np.float32)
+            self.next_obs      = np.empty([self.size] + list(frame.shape), dtype=np.float32 if self.lander else np.uint8)
             self.done     = np.empty([self.size],                     dtype=np.bool)
-        self.obs[self.next_idx] = frame
-
-        ret = self.next_idx
-        self.next_idx = (self.next_idx + 1) % self.size
+        
+        #print("Store_frame idx = ", self.idx)
+        self.obs[self.idx] = frame
+        
+        ret = self.idx
+        self.idx = (self.idx + 1) % self.size
         self.num_in_buffer = min(self.size, self.num_in_buffer + 1)
-
+        
         return ret
 
-    def store_effect(self, idx, action, reward, done):
-        """Store effects of action taken after obeserving frame stored
-        at index idx. The reason `store_frame` and `store_effect` is broken
-        up into two functions is so that once can call `encode_recent_observation`
-        in between.
+    def write(self, obs, action, reward, next_obs, done):
+        if self.n_step == 1:
+            self.store(obs, action, reward, next_obs, done)
+        else:
+            self.n_states.append(obs)
+            self.n_actions.append(action)
+            self.n_rewards.append(reward)
 
-        Paramters
-        ---------
-        idx: int
-            Index in buffer of recently observed frame (returned by `store_frame`).
-        action: int
-            Action that was performed upon observing this frame.
-        reward: float
-            Reward that was received when the actions was performed.
-        done: bool
-            True if episode was finished after performing that action.
-        """
-        self.action[idx] = action
-        self.reward[idx] = reward
-        self.done[idx]   = done
+            if done:
+                n_step_reward = 0
+                while len(self.n_states) > 1:
+                    n_step_obs = self.n_states.popleft()
+                    n_step_action = self.n_actions.popleft()
+                    n_step_next_obs = self.n_states[-1]
+                    for i in range(len(self.n_rewards)):
+                        n_step_reward += (self.gamma ** i ) * self.n_rewards.popleft()
+
+                    self.store(n_step_obs, n_step_action, n_step_reward, n_step_next_obs, done)
+
+            elif len(self.n_states) == self.n_step + 1:
+                n_step_reward = 0
+                for i in range(len(self.n_rewards)):
+                     n_step_reward += (self.gamma ** i ) * self.n_rewards.popleft()
+                self.store(self.n_states[0], self.n_actions[0], n_step_reward, self.n_states[-1], done)
+
+    def store(self, obs, action, reward, next_obs, done):
+        self.obs[self.idx] = obs
+        self.action[self.idx] = action
+        self.reward[self.idx] = reward
+        self.done[self.idx]   = done
+        self.next_obs[self.idx] = next_obs
+
+        self.idx = (self.idx + 1) % self.size
+        self.num_in_buffer = min(self.size, self.num_in_buffer + 1)
+            
+
+

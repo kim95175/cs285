@@ -37,7 +37,7 @@ class RL_Trainer(object):
         # Get params, create logger
         self.params = params
         self.logger = Logger(self.params['logdir'])
-        print(self.params)
+        #print(self.params)
         # Set random seeds
         seed = self.params['seed']
         np.random.seed(seed)
@@ -54,33 +54,35 @@ class RL_Trainer(object):
         # Make the gym environment
         register_custom_envs()
         self.env = gym.make(self.params['env_name'])
+        if not ('pointmass' in self.params['env_name']):
+            print("not pointmass")
+            import matplotlib
+            matplotlib.use('Agg')
+            self.env.set_logdir(self.params['logdir'] + '/expl_')
+            #self.eval_env.set_logdir(self.params['logdir'] + '/eval_')
+
         if 'env_wrappers' in self.params:
             # These operations are currently only for Atari envs
             print("if 'env_wrappers' in self.params:")
-            self.env = wrappers.Monitor(self.env, os.path.join(self.params['logdir'], "gym"),video_callable=video_schedule, force=True)
-            self.env = params['env_wrappers'](self.env)
+            self.env = wrappers.Monitor(self.env, os.path.join(self.params['logdir'], "gym"), force=True)
+            #self.env = params['env_wrappers'](self.env)
             self.mean_episode_reward = -float('nan')
             self.best_mean_episode_reward = -float('inf')
         
-        '''
-        if 'non_atari_colab_env' in self.params and self.params['video_log_freq'] > 0:
-            print("'non_atari_colab_env' in self.params")
-            self.env = wrappers.Monitor(self.env, os.path.join(self.params['logdir'], "gym"), force=True)
-            self.mean_episode_reward = -float('nan')
-            self.best_mean_episode_reward = -float('inf')
-        '''
-
+        if 'Pointmass' in self.params['env_name']:
+            print("pointmass")
+            #start_state = self.env._sample_empty_state()
+            #goal_state = self.env.fixed_goal
+            self.env.set_logdir(self.params['logdir'] + '/expl_')
+        
         self.env.seed(seed)
 
-        # import plotting (locally if 'obstacles' env)
-        if not(self.params['env_name']=='obstacles-cs285-v0'):
-            import matplotlib
-            matplotlib.use('Agg')
-
+        
         # Maximum length for episodes
-        self.params['ep_len'] = self.params['ep_len'] or self.env.spec.max_episode_steps
-        global MAX_VIDEO_LEN
-        MAX_VIDEO_LEN = self.params['ep_len']
+        #self.params['ep_len'] = self.params['ep_len'] or self.env.spec.max_episode_steps
+        #self.params['ep_len'] = self.env.spec.max_episode_steps
+        #global MAX_VIDEO_LEN
+        #MAX_VIDEO_LEN = self.params['ep_len']
         
         # Are the observations images?
         #img = len(self.env.observation_space.shape) > 2
@@ -91,7 +93,7 @@ class RL_Trainer(object):
         print("ob_dim = {}, ac_dim = {}".format(self.env.observation_space, ac_dim))
         self.params['agent_params']['ac_dim'] = ac_dim
         self.params['agent_params']['ob_dim'] = ob_dim
-
+        '''
         # simulation timestep, will be used for video saving
         if 'model' in dir(self.env):
             self.fps = 1/self.env.model.opt.timestep
@@ -103,6 +105,7 @@ class RL_Trainer(object):
             self.fps = 10
 
         print("fps = ", self.fps)
+        '''
 
         #############
         ## AGENT
@@ -141,6 +144,10 @@ class RL_Trainer(object):
             if itr % print_period == 0:
                 print("\nTraining agent...")
             all_logs = self.train_agent()
+
+            if itr % print_period == 0:
+                self.dump_density_graphs(itr)
+
 
             # log/save
             if itr % self.params['scalar_log_freq'] == 0:
@@ -183,11 +190,9 @@ class RL_Trainer(object):
         print("Timestep %d" % (self.agent.t,))
         print("Num Episodes %d" % (self.agent.num_episodes,))
         if self.agent.num_episodes > 0:
-            print("Grounded rate(%) = {0:.2f}".format(self.agent.num_grounded * 100 /self.agent.num_episodes))
             print("Success rate(%) = {0:.2f}".format(self.agent.num_at_site * 100 /self.agent.num_episodes))
 
-        logs["Num_Episode_Grounded"] = self.agent.num_grounded
-        logs["Num_Episode_Grounded_at_site"] = self.agent.num_at_site
+        logs["Num_Episode_reach_the_goal"] = self.agent.num_at_site
 
         if self.mean_episode_reward > -5000:
             logs["Train_AverageReturn"] = np.mean(self.mean_episode_reward)
@@ -212,12 +217,35 @@ class RL_Trainer(object):
 
         self.logger.flush()
 
+    def dump_density_graphs(self, itr):
+        import matplotlib.pyplot as plt
+        self.fig = plt.figure()
+        filepath = lambda name: self.params['logdir']+'/curr_{}.png'.format(name)
 
-def video_schedule(episode_id):
-    '''
-    if episode_id < 1000:
-        return int(round(episode_id ** (1.0 / 3))) ** 3 == episode_id
-    else:
-        return episode_id % 1000 == 0
-    '''
-    return episode_id % 100 == 0
+        num_states = self.agent.replay_buffer.num_in_buffer - 2
+        states = self.agent.replay_buffer.obs[:num_states]
+        if num_states <= 0: return
+        
+        H, xedges, yedges = np.histogram2d(states[:,0], states[:,1], range=[[0., 1.], [0., 1.]], density=True)
+        plt.imshow(np.rot90(H), interpolation='bicubic')
+        plt.colorbar()
+        plt.title('State Density')
+        self.fig.savefig(filepath('state_density'), bbox_inches='tight')
+
+        plt.clf()
+        ii, jj = np.meshgrid(np.linspace(0, 1), np.linspace(0, 1))
+        obs = np.stack([ii.flatten(), jj.flatten()], axis=1)
+        density = self.agent.exploration_model.forward_np(obs)
+        density = density.reshape(ii.shape)
+        plt.imshow(density[::-1])
+        plt.colorbar()
+        plt.title('RND Value')
+        self.fig.savefig(filepath('rnd_value'), bbox_inches='tight')
+        
+        plt.clf()
+        exploration_values = self.agent.dqn.qa_values(obs).mean(-1)
+        exploration_values = exploration_values.reshape(ii.shape)
+        plt.imshow(exploration_values[::-1])
+        plt.colorbar()
+        plt.title('Predicted Exploration Value')
+        self.fig.savefig(filepath('exploration_value'), bbox_inches='tight')
