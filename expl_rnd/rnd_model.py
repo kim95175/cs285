@@ -16,6 +16,7 @@ def init_method_2(model):
 class MLP(nn.Module):
     def __init__(self, input_size, output_size, n_layers, size, init_method):
         super(MLP, self).__init__()
+        # Layer 2 - 400 - 400 - 5
         layers = []
         in_size = input_size
         for _ in range(n_layers):
@@ -53,8 +54,7 @@ class RNDModel(nn.Module):
         # WARNING: Make sure you use different types of weight 
         #          initializations for these two functions
 
-        # HINT 1) Check out the method ptu.
-        # HINT 2) There are two weight init methods defined above
+        # HINT) There are two weight init methods defined above
 
         self.f = MLP(self.ob_dim, self.output_size, self.n_layers, self.size, init_method=init_method_1)
         self.f_hat = MLP(self.ob_dim, self.output_size, self.n_layers, self.size, init_method=init_method_2)
@@ -72,24 +72,24 @@ class RNDModel(nn.Module):
         self.f.to(ptu.device)
         self.f_hat.to(ptu.device)
 
-    def forward(self, ob_no):
-        # TODO: Get the prediction error for ob_no
+    def forward(self, next_obs):
+        # TODO: Get the prediction error for next_obs
         # HINT: Remember to detach the output of self.f!
-        f_out = self.f(ob_no).detach()
-        f_hat_out = self.f_hat(ob_no)
+        f_out = self.f(next_obs).detach()
+        f_hat_out = self.f_hat(next_obs)
         error = torch.norm(f_out - f_hat_out, dim=1)  # mean error over ob_dim for each item in the batch
         return error
 
-    def forward_np(self, ob_no):
-        ob_no = ptu.from_numpy(ob_no)
-        error = self(ob_no)
+    def forward_np(self, next_obs):
+        next_obs = ptu.from_numpy(next_obs)
+        error = self(next_obs)
         return ptu.to_numpy(error)
 
-    def update(self, ob_no):
-        # TODO: Update f_hat using ob_no
+    def update(self, next_obs):
+        # TODO: Update f_hat using next_obs
         # Hint: Take the mean prediction error across the batch
-        ob_no = ptu.from_numpy(ob_no)
-        error = self.forward(ob_no)
+        next_obs = ptu.from_numpy(next_obs)
+        error = self.forward(next_obs)
         loss = torch.mean(error)
 
         self.optimizer.zero_grad()
@@ -97,21 +97,5 @@ class RNDModel(nn.Module):
         self.optimizer.step()
         return loss.item()
 
-
-class MyExplorationModel(nn.Module):#, BaseExplorationModel):
-    def __init__(self, hparams, batch_size):
-        self.ob_dim = hparams['ob_dim']
-        self.mean = np.zeros((1, self.ob_dim))
-        self.time_discount = 0.8
-
-    def forward_np(self, ob_no):
-        return np.linalg.norm(ob_no-self.mean, axis=1)
-
-    def update(self, ob_no):
-        new_mean = self.mean*self.time_discount + ob_no.mean(0)*(1-self.time_discount)
-        mean_difference = np.linalg.norm(new_mean - self.mean)
-        self.mean = new_mean
-        assert self.mean.shape == (1,self.ob_dim)
-        return mean_difference
 
 

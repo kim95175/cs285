@@ -49,7 +49,7 @@ def main():
         choices=('PointmassEasy-v0', 'PointmassMedium-v0', 'PointmassHard-v0', 'PointmassVeryHard-v0', 'PointmassSpiral-v0')
     )
 
-    parser.add_argument('--ep_len', type=int, default=200)
+    #parser.add_argument('--ep_len', type=int, default=200)
     parser.add_argument('--exp_name', type=str, default='todo')
     parser.add_argument('--num_timesteps', type=int, default=40000)
 
@@ -105,8 +105,11 @@ def main():
 
     if not (os.path.exists(data_path)):
         os.makedirs(data_path)
-
-    logdir = args.exp_name + '_' + args.env_name[:-3]
+    
+    if params['use_rnd']:
+        logdir = args.exp_name + '_dqn+rnd_' + args.env_name[:-3]
+    else:
+        logdir = args.exp_name + '_dqn_' + args.env_name[:-3]
     logdir = os.path.join(data_path, logdir)
     params['logdir'] = logdir
     if not(os.path.exists(logdir)):

@@ -36,8 +36,6 @@ class RL_Trainer(object):
 
         # Get params, create logger
         self.params = params
-        self.logger = Logger(self.params['logdir'])
-        #print(self.params)
         # Set random seeds
         seed = self.params['seed']
         np.random.seed(seed)
@@ -54,59 +52,26 @@ class RL_Trainer(object):
         # Make the gym environment
         register_custom_envs()
         self.env = gym.make(self.params['env_name'])
-        if not ('pointmass' in self.params['env_name']):
-            print("not pointmass")
+        if ('Pointmass' in self.params['env_name']):
             import matplotlib
             matplotlib.use('Agg')
             self.env.set_logdir(self.params['logdir'] + '/expl_')
             #self.eval_env.set_logdir(self.params['logdir'] + '/eval_')
 
         if 'env_wrappers' in self.params:
-            # These operations are currently only for Atari envs
-            print("if 'env_wrappers' in self.params:")
-            self.env = wrappers.Monitor(self.env, os.path.join(self.params['logdir'], "gym"), force=True)
-            #self.env = params['env_wrappers'](self.env)
+            self.env = wrappers.Monitor(self.env, os.path.join(self.params['logdir']), force=True)
             self.mean_episode_reward = -float('nan')
             self.best_mean_episode_reward = -float('inf')
         
-        if 'Pointmass' in self.params['env_name']:
-            print("pointmass")
-            #start_state = self.env._sample_empty_state()
-            #goal_state = self.env.fixed_goal
-            self.env.set_logdir(self.params['logdir'] + '/expl_')
-        
         self.env.seed(seed)
-
-        
-        # Maximum length for episodes
-        #self.params['ep_len'] = self.params['ep_len'] or self.env.spec.max_episode_steps
-        #self.params['ep_len'] = self.env.spec.max_episode_steps
-        #global MAX_VIDEO_LEN
-        #MAX_VIDEO_LEN = self.params['ep_len']
-        
-        # Are the observations images?
-        #img = len(self.env.observation_space.shape) > 2
-        
+    
         # Observation and action sizes
         ob_dim = self.env.observation_space.shape[0] # #if img else self.env.observation_space.shape[0]
         ac_dim = self.env.action_space.n
         print("ob_dim = {}, ac_dim = {}".format(self.env.observation_space, ac_dim))
         self.params['agent_params']['ac_dim'] = ac_dim
         self.params['agent_params']['ob_dim'] = ob_dim
-        '''
-        # simulation timestep, will be used for video saving
-        if 'model' in dir(self.env):
-            self.fps = 1/self.env.model.opt.timestep
-        elif 'env_wrappers' in self.params:
-            self.fps = 30 # This is not actually used when using the Monitor wrapper
-        elif 'video.frames_per_second' in self.env.env.metadata.keys():
-            self.fps = self.env.env.metadata['video.frames_per_second']
-        else:
-            self.fps = 10
-
-        print("fps = ", self.fps)
-        '''
-
+        
         #############
         ## AGENT
         #############
@@ -126,17 +91,16 @@ class RL_Trainer(object):
         self.total_envsteps = 0
         self.start_time = time.time()
 
-        print_period = self.params['scalar_log_freq'] if isinstance(self.agent, DQNAgent) else 1
-
+        print_period = self.params['scalar_log_freq']
         for itr in tqdm(range(n_iter)):
             if itr % print_period == 0:
                 print("\n********** Iteration %i ************"%itr)
 
             # collect trajectories, to be used for training
-            if isinstance(self.agent, DQNAgent):
+            #if isinstance(self.agent, DQNAgent):
                 # only perform an env step and add to replay buffer for DQN
-                self.agent.step_env()
-                envsteps_this_batch = 1
+            self.agent.step_env()
+            envsteps_this_batch = 1
             
             self.total_envsteps += envsteps_this_batch
 
@@ -155,8 +119,6 @@ class RL_Trainer(object):
                 print('\nBeginning logging procedure...')
                 self.perform_dqn_logging(all_logs)
 
-                #if self.params['save_params']:
-                #    self.agent.save('{}/agent_itr_{}.pt'.format(self.params['logdir'], itr))
         
         print("\n\n********** Training finished ************")
         all_logs = self.train_agent()
@@ -167,8 +129,6 @@ class RL_Trainer(object):
         for train_step in range(self.params['num_agent_train_steps_per_iter']):
             ob_batch, ac_batch, re_batch, next_ob_batch, terminal_batch = self.agent.sample(
                 self.params['train_batch_size'])
-            #if len(ob_batch) != 0:
-                #print("rl_trainer/train_agent ", ob_batch[0].shape, next_ob_batch[0].shape)
             train_log = self.agent.train(ob_batch, ac_batch, re_batch, next_ob_batch, terminal_batch)
             all_logs.append(train_log)
         return all_logs
@@ -212,10 +172,8 @@ class RL_Trainer(object):
 
         for key, value in logs.items():
             print('\t{} : {}'.format(key, value))
-            self.logger.log_scalar(value, key, self.agent.t)
         print('Done logging...\n\n')
 
-        self.logger.flush()
 
     def dump_density_graphs(self, itr):
         import matplotlib.pyplot as plt
@@ -231,7 +189,7 @@ class RL_Trainer(object):
         plt.colorbar()
         plt.title('State Density')
         self.fig.savefig(filepath('state_density'), bbox_inches='tight')
-
+        
         plt.clf()
         ii, jj = np.meshgrid(np.linspace(0, 1), np.linspace(0, 1))
         obs = np.stack([ii.flatten(), jj.flatten()], axis=1)
@@ -240,12 +198,12 @@ class RL_Trainer(object):
         plt.imshow(density[::-1])
         plt.colorbar()
         plt.title('RND Value')
-        self.fig.savefig(filepath('rnd_value'), bbox_inches='tight')
-        
+        self.fig.savefig(filepath('rnd_value'))#, bbox_inches='tight')
+   
         plt.clf()
         exploration_values = self.agent.dqn.qa_values(obs).mean(-1)
         exploration_values = exploration_values.reshape(ii.shape)
         plt.imshow(exploration_values[::-1])
         plt.colorbar()
-        plt.title('Predicted Exploration Value')
-        self.fig.savefig(filepath('exploration_value'), bbox_inches='tight')
+        plt.title('predicted Q value')
+        self.fig.savefig(filepath('predicted_q_value')) #, bbox_inches='tight')

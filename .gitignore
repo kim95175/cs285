@@ -2,4 +2,5 @@ cs285_rnd/data/
 cs285_dqn/data/
 cs285_dqn_rnd/data/
 expl_rnd/data/
+expl_rnd/.ipynb_checkpoints
 *.pyc
